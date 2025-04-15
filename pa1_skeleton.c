@@ -55,6 +55,7 @@ typedef struct {
     float request_rate;  /* Computed request rate (requests per second) based on RTT and total messages. */
     unsigned long transmitted_cnt; // packets transmitted
     unsigned long received_cnt; // packets recieved
+    unsigned long lost_cnt; //packets lost
 } client_thread_data_t;
 
 /*
@@ -91,7 +92,7 @@ void *client_thread_func(void *arg) {
     data->total_messages = 0;
     data->transmitted_cnt = 0;
     data->received_cnt = 0;
-
+    data->lost_cnt = 0;
     for(int i = 0; i < num_requests; i++){
         // get timestamp
         gettimeofday(&start, NULL);
@@ -104,10 +105,12 @@ void *client_thread_func(void *arg) {
         data->transmitted_cnt++;
 
         // wait for event, keep blocking
-        nfds = epoll_wait(data->epoll_fd, events, MAX_EVENTS, -1);
-        if(nfds == -1){
-            perror("epoll_wait");
-            break;
+        // now we set a timeout to 100ms
+        nfds = epoll_wait(data->epoll_fd, events, MAX_EVENTS, 100);
+        if(nfds == 0){
+            // lost packet
+            data->lost_cnt++;
+            // printf("Lost packet\n");
         }
 
         // find socket event by looking through the fds, if event is ready, then break
@@ -226,7 +229,8 @@ void run_client() {
         total_messages += thread_data[i].total_messages;
         total_transmitted += thread_data[i].transmitted_cnt;
         total_received += thread_data[i].received_cnt;
-        total_lost += thread_data[i].transmitted_cnt - thread_data[i].received_cnt;
+        // total_lost += thread_data[i].transmitted_cnt - thread_data[i].received_cnt;
+        total_lost += thread_data[i].lost_cnt;
     }
 
     // should be 1
@@ -265,6 +269,11 @@ void run_server() {
     
     // listening socket
     sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    int recv_buf_size = 4096;
+    if(setsockopt(sock_fd, SOL_SOCKET, SO_RCVBUF, &recv_buf_size, sizeof(recv_buf_size)) < 0){
+        perror("setsockopt failed");
+        exit(EXIT_FAILURE);
+    }
     if(sock_fd < 0){
         perror("socket");
         exit(EXIT_FAILURE);

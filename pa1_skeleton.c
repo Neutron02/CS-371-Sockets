@@ -120,7 +120,7 @@ void *client_thread_func(void *arg) {
                     sprintf(buf, "bytes_received is: %d", bytes_received);
                 } else {
                     data->received_cnt++;
-                    printf("Received %d bytes from server\n", bytes_received);
+                    // printf("Received %d bytes from server\n", bytes_received);
                 }
             }
         }
@@ -294,17 +294,17 @@ void run_server() {
     epoll_fd = epoll_create1(0);
     if (epoll_fd < 0) {
         perror("epoll_create1");
-        close(listen_fd);
+        close(sock_fd);
         exit(EXIT_FAILURE);
     }
 
-    event.data.fd = listen_fd;
+    event.data.fd = sock_fd;
     event.events = EPOLLIN;
 
     // add fd of the listening socket to epoll
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_fd, &event) < 0) {
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock_fd, &event) < 0) {
         perror("epoll_ctl: listen_fd");
-        close(listen_fd);
+        close(sock_fd);
         close(epoll_fd);
         exit(EXIT_FAILURE);
     }
@@ -319,47 +319,35 @@ void run_server() {
          nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
          if (nfds < 0) {
              perror("epoll_wait");
-             close(listen_fd);
+             close(sock_fd);
              close(epoll_fd);
              exit(EXIT_FAILURE);
          }
 
         for (n = 0; n < nfds; n++) {
             // new connection on listen socket, so aaccept it
-            if (events[n].data.fd == listen_fd) {
-                conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
-                if (conn_fd < 0) {
-                    perror("accept");
-                    continue;
-                }
+            if (events[n].data.fd == sock_fd) {
+                // conn_fd = accept(listen_fd, (struct sockaddr *)&client_addr, &client_len);
+                // if (conn_fd < 0) {
+                //     perror("accept");
+                //     continue;
+                // }
 
-                // register
-                event.data.fd = conn_fd;
-                event.events = EPOLLIN;
-
-                // add fd of new client socket to epoll
-                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_fd, &event) < 0) {
-                    perror("epoll_ctl: conn_fd");
-                    close(conn_fd);
-                    continue;
-                }
-            } else {
-                // for if an event is already on a connection
-                int client_fd = events[n].data.fd;
-                int bytes_received = recv(client_fd, buf, MESSAGE_SIZE, 0);
-                if (bytes_received <= 0) {
-                    // nothging received, close the connect
-                    close(client_fd);
+                // udp now so we just recv
+                int bytes_received = recvfrom(sock_fd, buf, MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr, &client_len);
+                if(bytes_received <= 0){
+                    perror("recvfrom");
                 } else {
-                    // echo it back to client
-                    send(client_fd, buf, bytes_received, 0);
+                    // send it to the client
+                    sendto(sock_fd, buf, bytes_received, 0, (struct sockaddr *)&client_addr, client_len);
+                    // printf("Received %d bytes from client\n", bytes_received);
                 }
             }
         }
     }
 
     // cleanup
-    close(listen_fd);
+    close(sock_fd);
     close(epoll_fd);
 }
 
